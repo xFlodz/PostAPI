@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package user;
+
+service gRPCUserService {
+    rpc GetUserByEmail (GetUserByEmailRequest) returns (GetUserByEmailResponse);
+    rpc GetUserById (GetUserByIdRequest) returns (GetUserByIdResponse);
+}
+
+message GetUserByEmailRequest {
+    string email = 1;
+}
+
+message GetUserByEmailResponse {
+    string id = 1;
+    string email = 2;
+    string name = 3;
+    string surname = 4;
+    string role = 5;
+}
+
+message GetUserByIdRequest {
+    int32 user_id = 1;
+}
+
+message GetUserByIdResponse {
+    string id = 1;
+    string email = 2;
+    string name = 3;
+    string surname = 4;
+    string role = 5;
+}

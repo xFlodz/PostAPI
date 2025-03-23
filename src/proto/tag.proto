@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package tag;
+
+service gRPCTagService {
+    rpc GetTagById (GetTagByIdRequest) returns (GetTagByIdResponse);
+}
+
+message GetTagByIdRequest {
+    int32 tag_id = 1;
+}
+
+message GetTagByIdResponse {
+    string id = 1;
+    string name = 2;
+}
