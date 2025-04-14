@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from ..services.post_service import (
     create_post_service,
@@ -6,7 +6,8 @@ from ..services.post_service import (
     edit_post_service,
     get_all_posts_service,
     get_post_by_address_service,
-    approve_post_service
+    approve_post_service,
+    get_qr_code_service
 )
 
 post_bp = Blueprint('post', __name__)
@@ -111,5 +112,20 @@ def approve_post(post_address):
     try:
         result = approve_post_service(post_address, current_user_email)
         return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@post_bp.route('/get_qr_code/<string:post_address>', methods=['GET'])
+@jwt_required(refresh=True)
+def get_qr_code(post_address):
+    try:
+        doc_file = get_qr_code_service(post_address)
+        return send_file(
+            doc_file,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            as_attachment=True,
+            download_name=f"qr_code_{post_address}.docx"
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500

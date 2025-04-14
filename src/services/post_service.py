@@ -6,7 +6,7 @@ import json
 
 from ..db import db
 from ..models import Post, TagInPost, ImageInPost, VideoInPost, TextInPost
-from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format
+from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format, generate_doc_with_qr_bytes
 from ..proto import user_pb2, user_pb2_grpc, tag_pb2, tag_pb2_grpc
 
 user_channel = grpc.insecure_channel('127.0.0.1:50053')
@@ -314,6 +314,19 @@ def approve_post_service(post_address, current_user_email):
         db.session.rollback()
         return {'error': str(e)}, 500
 
+
+def get_qr_code_service(post_address):
+    try:
+        post = Post.query.filter(Post.address == post_address, Post.deleted_at.is_(None)).first()
+
+        if not post:
+            return {'error': 'Пост не найден'}, 404
+
+        doc = generate_doc_with_qr_bytes(post.header, post.address)
+        return doc
+
+    except Exception as e:
+        return {'error': str(e)}, 500
 
 def _add_content_to_post(post_id, content, post_address, structure):
     for item in content:
