@@ -9,10 +9,10 @@ from ..models import Post, TagInPost, ImageInPost, VideoInPost, TextInPost
 from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format, generate_doc_with_qr_bytes
 from ..proto import user_pb2, user_pb2_grpc, tag_pb2, tag_pb2_grpc
 
-user_channel = grpc.insecure_channel('127.0.0.1:50053')
+user_channel = grpc.insecure_channel('user-api:50053') # 127.0.0.1 / 0.0.0.0
 user_stub = user_pb2_grpc.gRPCUserServiceStub(user_channel)
 
-tag_channel = grpc.insecure_channel('127.0.0.1:50054')
+tag_channel = grpc.insecure_channel('tag-api:50054') # 127.0.0.1 / 0.0.0.0
 tag_stub = tag_pb2_grpc.gRPCTagServiceStub(tag_channel)
 
 def get_user_by_email(email):
@@ -38,9 +38,6 @@ def get_user_by_id(user_id):
             'surname': response.surname,
             'role': response.role
         }
-    #except grpc.RpcError as e:
-        #print(f"Error fetching user by ID: {e}")
-        #return None
 
 def get_tag_by_id(tag_id):
     try:

@@ -67,6 +67,7 @@ def get_all_posts():
         current_user_email = get_jwt_identity()
 
         posts = get_all_posts_service(date_filter_type, start_date, end_date, tags_filter, current_user_email)
+        print(posts)
         return jsonify(posts), 200
 
     except Exception as e:
