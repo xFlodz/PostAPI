@@ -5,7 +5,8 @@ from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 class TagInPost(db.Model):
-    post_id: Mapped[int] = mapped_column(ForeignKey('post.id', ondelete='CASCADE'), primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey('post.id', ondelete='CASCADE'))
     tag_id: Mapped[int] = mapped_column(db.Integer, index=True, nullable=False)
     tag_name: Mapped[str] = mapped_column(db.String(100), nullable=False)
 

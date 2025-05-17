@@ -9,10 +9,10 @@ from ..models import Post, TagInPost, ImageInPost, VideoInPost, TextInPost
 from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format, generate_doc_with_qr_bytes
 from ..proto import user_pb2, user_pb2_grpc, tag_pb2, tag_pb2_grpc
 
-user_channel = grpc.insecure_channel('user-api:50053') # 127.0.0.1 / user-api
+user_channel = grpc.insecure_channel('127.0.0.1:50053') # 127.0.0.1 / user-api
 user_stub = user_pb2_grpc.gRPCUserServiceStub(user_channel)
 
-tag_channel = grpc.insecure_channel('tag-api:50054') # 127.0.0.1 / tag-api
+tag_channel = grpc.insecure_channel('127.0.0.1:50054') # 127.0.0.1 / tag-api
 tag_stub = tag_pb2_grpc.gRPCTagServiceStub(tag_channel)
 
 def get_user_by_email(email):
@@ -59,6 +59,7 @@ def create_post_service(data, current_user_email):
         tags = data.get('tags', [])
         left_date = data.get('left_date')
         right_date = data.get('right_date')
+        lead = data.get('lead')
 
         date_range = json.dumps({
             'start_date': left_date if left_date else None,
@@ -81,7 +82,8 @@ def create_post_service(data, current_user_email):
             date_range=date_range,
             creator_id=creator_id,
             structure=json.dumps([]),
-            is_approved=is_approved
+            is_approved=is_approved,
+            lead = lead
         )
 
         db.session.add(new_post)
@@ -166,13 +168,11 @@ def get_all_posts_service(date_filter_type=None, start_date=None, end_date=None,
         if only_not_approved:
             user = get_user_by_email(only_not_approved)
             if not user or user.get('role') not in ['poster', 'admin']:
-                return jsonify({'error': 'У вас недостаточно прав'}), 403
+                return 'У вас недостаточно прав'
             query = query.filter(Post.is_approved == False)
 
         if current_user_email:
             user = get_user_by_email(current_user_email)
-            if not user or user.get('role') not in ['poster', 'admin']:
-                return jsonify({'error': 'У вас недостаточно прав'}), 403
             query = query.filter(Post.creator_id == user.get('id'))
         else:
             if not only_not_approved:
@@ -228,7 +228,8 @@ def get_all_posts_service(date_filter_type=None, start_date=None, end_date=None,
                 'is_approved': post.is_approved,
                 'tags': tags,
                 'text': text,
-                'author': author
+                'author': author,
+                'lead': post.lead
             })
 
         return posts_list
@@ -270,6 +271,7 @@ def get_post_by_address_service(post_address):
             for tag in TagInPost.query.filter(TagInPost.post_id == post.id, TagInPost.deleted_at.is_(None)).all()
         ]
 
+
         post_data = {
             'id': post.id,
             'address': post.address,
@@ -284,7 +286,8 @@ def get_post_by_address_service(post_address):
             'text': text,
             'images': images,
             'videos': videos,
-            'tags': tags
+            'tags': tags,
+            'lead': post.lead
         }
 
         return post_data
@@ -346,5 +349,6 @@ def _add_tags_to_post(post_id, tags):
     for tag_id in tags:
         tag = get_tag_by_id(tag_id)
         if tag:
+            print(post_id)
             tag_in_post = TagInPost(post_id=post_id, tag_id=tag_id, tag_name=tag['name'])
             db.session.add(tag_in_post)

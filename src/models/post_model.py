@@ -7,12 +7,13 @@ import json
 
 class Post(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
-    address: Mapped[str] = mapped_column(db.String(150))
-    header: Mapped[str] = mapped_column(db.String(70))
+    address: Mapped[str] = mapped_column(db.String(250))
+    header: Mapped[str] = mapped_column(db.String(150))
     main_image: Mapped[str] = mapped_column(db.String)
     date_range: Mapped[str] = mapped_column(db.String)
     creator_id: Mapped[str] = mapped_column(db.Integer)
     structure: Mapped[str] = mapped_column(db.String)
+    lead: Mapped[str] = mapped_column(db.String(250))
     is_approved: Mapped[bool] = mapped_column(db.Boolean)
 
     tags_in_post: Mapped[list['TagInPost']] = relationship(
