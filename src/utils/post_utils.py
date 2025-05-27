@@ -6,10 +6,14 @@ from flask import current_app
 from sqlalchemy import func
 from transliterate import translit
 import qrcode
+from io import BytesIO
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from io import BytesIO
+from realesrgan import RealESRGANer
+from PIL import Image
+import torch
+from basicsr.archs.rrdbnet_arch import RRDBNet
 
 
 def generate_post_address(header):
@@ -36,37 +40,90 @@ def get_next_filename(folder, extension):
     return f'{next_number}.{extension}'
 
 
+def enhance_and_resize(img, target_width=1920, target_height=1080):
+    try:
+        h, w = img.shape[:2]
+
+        if w < 1280 or h < 720:
+            print("Повышение качества через Real-ESRGAN...")
+
+            # Параметры модели (стандартные для RealESRGAN_x4plus)
+            model = RRDBNet(
+                num_in_ch=3,
+                num_out_ch=3,
+                num_feat=64,
+                num_block=23,
+                num_grow_ch=32,
+            )
+
+            model_path = 'src/weights/RealESRGAN_x4plus.pth'
+
+            # Проверяем доступность GPU
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+            # Загружаем веса с обработкой EMA
+            state_dict = torch.load(model_path, map_location=device)
+
+            if 'params_ema' in state_dict:
+                model.load_state_dict(state_dict['params_ema'], strict=True)
+            else:
+                model.load_state_dict(state_dict, strict=True)
+
+            model.eval()
+            model = model.to(device)
+
+            # Инициализация апскейлера
+            upsampler = RealESRGANer(
+                scale=4,
+                model_path=model_path,
+                model=model,
+                device=device,
+                tile=0,
+                tile_pad=10,
+                pre_pad=0,
+            )
+
+            # Конвертируем изображение и апскейлим
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            output, _ = upsampler.enhance(img_rgb, outscale=4)
+            img = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
+
+    except Exception as e:
+        print(f"Ошибка повышения качества: {e}")
+
+    return cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
+
 def save_image(image, post_address, image_type):
-    image_folder = f'src/assets/{post_address}/{image_type}'
-    os.makedirs(image_folder, exist_ok=True)
+    try:
+        image_folder = f'src/assets/{post_address}/{image_type}'
+        os.makedirs(image_folder, exist_ok=True)
 
-    if isinstance(image, str) and image.startswith('data:image'):
-        try:
-            image_format = image.split(";")[0].split("/")[1]
-            base64_data = image.split(",")[1]
-            image_data = base64.b64decode(base64_data)
+        image_format = image.split(";")[0].split("/")[1]
+        base64_data = image.split(",")[1]
+        image_data = base64.b64decode(base64_data)
 
-            np_arr = np.frombuffer(image_data, np.uint8)
-            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        np_arr = np.frombuffer(image_data, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-            if img is None:
-                raise ValueError("Ошибка декодирования изображения")
+        if img is None:
+            raise ValueError("Ошибка декодирования изображения")
 
-            resized_img = cv2.resize(img, (1920, 1080), interpolation=cv2.INTER_LANCZOS4)
+        img = enhance_and_resize(img)
 
-            filename = get_next_filename(image_folder, image_format)
-            image_path = os.path.join(image_folder, filename)
+        filename = get_next_filename(image_folder, image_format)
+        image_path = os.path.join(image_folder, filename)
 
-            if not allowed_file(filename):
-                raise ValueError(f'Недопустимое расширение файла: {filename}')
+        if not allowed_file(filename):
+            raise ValueError(f'Недопустимое расширение файла: {filename}')
 
-            cv2.imwrite(image_path, resized_img)
+        cv2.imwrite(image_path, img)
+        print(f"Изображение сохранено: {image_path}")
 
-            return image_path
-        except Exception as e:
-            raise ValueError(f"Ошибка при обработке изображения: {e}")
-    else:
-        raise TypeError("Ожидалась строка base64 с изображением")
+        return image_path
+
+    except Exception as e:
+        print(f"Ошибка при обработке изображения: {e}")
+
 
 
 def allowed_file(filename):
@@ -105,12 +162,6 @@ def generate_qr_code(address):
     except Exception as e:
         raise ValueError(f'Ошибка при генерации QR-кода: {e}')
 
-
-from io import BytesIO
-from docx import Document
-from docx.shared import Inches, Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-import os
 
 def generate_doc_with_qr_bytes(header, address):
     try:

@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package post;
+
+service gRPCPostService {
+  rpc RemoveTagFromPosts (RemoveTagRequest) returns (RemoveTagResponse);
+}
+
+message RemoveTagRequest {
+  string tag_id = 1;
+}
+
+message RemoveTagResponse {
+  bool success = 1;
+}

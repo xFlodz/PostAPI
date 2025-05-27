@@ -72,7 +72,15 @@ def create_post_service(data, current_user_email):
 
         is_approved = user.get('role') == 'poster'
         creator_id = user['id']
-        post_address = generate_post_address(header)
+        base_address = generate_post_address(header)
+        post_address = base_address
+
+        if Post.query.filter_by(address=post_address).first():
+            counter = 1
+            while Post.query.filter_by(address=post_address).first():
+                post_address = f"{base_address}_{counter}"
+                counter += 1
+
         main_image_path = save_image(main_image, post_address, 'main_image')
 
         new_post = Post(
@@ -135,8 +143,16 @@ def edit_post_service(post_address, data, current_user_email):
         if 'main_image' in data:
             post.main_image = save_image(data['main_image'], post.address, 'main_image')
 
+        date_range = data['date_range']
+
+        data['date_range'] = json.dumps({
+            'start_date': date_range['start_date'] if date_range['start_date'] else None,
+            'end_date': date_range['end_date'] if date_range['end_date'] else None
+        })
+
         for key, value in data.items():
             if key not in ['main_image', 'content', 'tags']:
+                print(post,' ', key,' ', value)
                 setattr(post, key, value)
 
         ImageInPost.query.filter(ImageInPost.post_id == post.id, ImageInPost.deleted_at.is_(None)).delete()
@@ -313,6 +329,16 @@ def approve_post_service(post_address, current_user_email):
     except Exception as e:
         db.session.rollback()
         return {'error': str(e)}, 500
+
+
+def remove_tag_from_all_posts_service(tag_id):
+    try:
+        TagInPost.query.filter(TagInPost.tag_id == tag_id).delete(synchronize_session=False)
+        db.session.commit()
+        return 1
+    except Exception as e:
+        db.session.rollback()
+        return 0
 
 
 def get_qr_code_service(post_address):
