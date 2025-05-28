@@ -63,14 +63,12 @@ def enhance_and_resize(img, target_width=1920, target_height=1080):
             sr2.setModel('edsr', 4)
             img = sr2.upsample(img)
 
-            # Резкость
             print("Финальный шаг: повышение резкости...")
             sharpen_kernel = np.array([[0, -1, 0],
                                        [-1, 5, -1],
                                        [0, -1, 0]])
             img = cv2.filter2D(img, -1, sharpen_kernel)
 
-        # Масштабируем до нужных размеров
         img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
 
         return img
