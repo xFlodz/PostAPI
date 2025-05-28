@@ -39,7 +39,7 @@ def enhance_and_resize(img, target_width=1920, target_height=1080):
     try:
         h, w = img.shape[:2]
 
-        if w < 1280 or h < 720:
+        if w < 920 or h < 480:
             print("Этап 1: апскейлинг через FSRCNN...")
             fsrcnn_path = 'src/weights/FSRCNN_x4.pb'
             if not os.path.exists(fsrcnn_path):
