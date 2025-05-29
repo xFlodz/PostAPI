@@ -1,18 +1,19 @@
 from datetime import datetime
 import grpc
-from sqlalchemy import and_
+from sqlalchemy import and_, extract
 from flask import jsonify
 import json
 
 from ..db import db
 from ..models import Post, TagInPost, ImageInPost, VideoInPost, TextInPost
-from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format, generate_doc_with_qr_bytes
+from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format, \
+                        generate_doc_with_qr_bytes, parse_post_dates
 from ..proto import user_pb2, user_pb2_grpc, tag_pb2, tag_pb2_grpc
 
-user_channel = grpc.insecure_channel('user-api:50053') # 127.0.0.1 / user-api
+user_channel = grpc.insecure_channel('127.0.0.1:50053') # 127.0.0.1 / user-api
 user_stub = user_pb2_grpc.gRPCUserServiceStub(user_channel)
 
-tag_channel = grpc.insecure_channel('tag-api:50054') # 127.0.0.1 / tag-api
+tag_channel = grpc.insecure_channel('127.0.0.1:50054') # 127.0.0.1 / tag-api
 tag_stub = tag_pb2_grpc.gRPCTagServiceStub(tag_channel)
 
 def get_user_by_email(email):
@@ -168,7 +169,16 @@ def edit_post_service(post_address, data, current_user_email):
         _add_tags_to_post(post.id, data.get('tags', []))
 
         post.structure = json.dumps(structure)
-        post.address = generate_post_address(post.header)
+        base_address = generate_post_address(post.header)
+        post_address = base_address
+
+        if Post.query.filter_by(address=post_address).first():
+            counter = 1
+            while Post.query.filter_by(address=post_address).first():
+                post_address = f"{base_address}_{counter}"
+                counter += 1
+        post.address = post_address
+
         db.session.commit()
 
         return post
@@ -177,7 +187,8 @@ def edit_post_service(post_address, data, current_user_email):
         return jsonify({'error': str(e)}), 500
 
 
-def get_all_posts_service(date_filter_type=None, start_date=None, end_date=None, tags_filter=None, current_user_email=None, only_not_approved=None):
+def get_all_posts_service(date_filter_type=None, start_date=None, end_date=None, tags_filter=None,
+                          current_user_email=None, only_not_approved=None):
     try:
         query = Post.query.filter(Post.deleted_at.is_(None))
 
@@ -190,51 +201,132 @@ def get_all_posts_service(date_filter_type=None, start_date=None, end_date=None,
         if current_user_email:
             user = get_user_by_email(current_user_email)
             query = query.filter(Post.creator_id == user.get('id'))
-        else:
-            if not only_not_approved:
-                query = query.filter(Post.is_approved == True)
+        elif not only_not_approved:
+            query = query.filter(Post.is_approved == True)
 
-        if start_date and end_date:
-            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
-            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+        if start_date:
+            filter_start = None
+            filter_end = None
 
-            query = query.filter(
-                and_(
-                    convert_json_date_to_sqlite_format(Post.date_range, '$.start_date') >= start_date_obj.date(),
-                    convert_json_date_to_sqlite_format(Post.date_range, '$.end_date') <= end_date_obj.date()
-                )
-            )
+            try:
+                if len(start_date) == 4 and start_date.isdigit():
+                    filter_start = datetime(int(start_date), 1, 1).date()
+                else:
+                    filter_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            except:
+                pass
+
+            if end_date:
+                try:
+                    if len(end_date) == 4 and end_date.isdigit():
+                        filter_end = datetime(int(end_date), 12, 31).date()
+                    else:
+                        filter_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+                except:
+                    pass
+
+            if filter_start:
+                posts = query.all()
+                filtered_posts = []
+
+                for post in posts:
+                    post_start, post_end = parse_post_dates(post)
+
+                    if not post_start:
+                        continue
+
+                    post_start_year_only = post_start and (post_start.month == 1 and post_start.day == 1)
+                    post_end_year_only = post_end and (post_end.month == 12 and post_end.day == 31)
+
+                    if not filter_end:
+                        if post_start.year == filter_start.year:
+                            filtered_posts.append(post)
+                    else:
+                        if post_start_year_only and (post_end is None or post_end_year_only):
+                            if (post_start.year <= filter_end.year) and (
+                            filter_start.year <= post_end.year if post_end else post_start.year):
+                                filtered_posts.append(post)
+                        else:
+                            effective_post_end = post_end if post_end else post_start
+                            if (post_start <= filter_end) and (effective_post_end >= filter_start):
+                                filtered_posts.append(post)
+
+                query = query.filter(Post.id.in_([p.id for p in filtered_posts]))
 
         if date_filter_type == 'creation':
             query = query.order_by(Post.created_at.desc())
         elif date_filter_type == 'historical':
-            query = query.order_by(
-                convert_json_date_to_sqlite_format(Post.date_range, '$.start_date').asc()
+            posts = query.all()
+            posts_sorted = sorted(
+                posts,
+                key=lambda p: (
+                    json.loads(p.date_range).get('start_date', '0000'),
+                    p.created_at
+                )
             )
+            result = []
+            for post in posts_sorted:
+                user = get_user_by_id(post.creator_id)
+                author = f"{user.get('name')} {user.get('surname')}" if user else "Неизвестный автор"
+
+                tags = [
+                    {'tag_id': tag_in_post.tag_id, 'tag_name': get_tag_by_id(tag_in_post.tag_id).get('name')}
+                    for tag_in_post in TagInPost.query.filter(
+                        TagInPost.post_id == post.id,
+                        TagInPost.deleted_at.is_(None)
+                    ).all()
+                ]
+
+                text = [
+                    {'text': text.text}
+                    for text in TextInPost.query.filter(
+                        TextInPost.post_id == post.id,
+                        TextInPost.deleted_at.is_(None)
+                    ).all()
+                ]
+
+                result.append({
+                    'id': post.id,
+                    'address': post.address,
+                    'header': post.header,
+                    'main_image': post.main_image,
+                    'date_range': json.loads(post.date_range),
+                    'created_at': post.created_at,
+                    'is_approved': post.is_approved,
+                    'tags': tags,
+                    'text': text,
+                    'author': author,
+                    'lead': post.lead
+                })
+            return result
 
         if tags_filter:
             tags_count = len(tags_filter)
             query = query.join(TagInPost).filter(TagInPost.tag_id.in_(tags_filter))
             query = query.group_by(Post.id).having(db.func.count(TagInPost.tag_id) == tags_count)
 
-        posts = query.all()
-        posts_list = []
-
-        for post in posts:
+        result = []
+        for post in query.all():
             user = get_user_by_id(post.creator_id)
             author = f"{user.get('name')} {user.get('surname')}" if user else "Неизвестный автор"
 
             tags = [
                 {'tag_id': tag_in_post.tag_id, 'tag_name': get_tag_by_id(tag_in_post.tag_id).get('name')}
-                for tag_in_post in TagInPost.query.filter(TagInPost.post_id == post.id, TagInPost.deleted_at.is_(None)).all()
+                for tag_in_post in TagInPost.query.filter(
+                    TagInPost.post_id == post.id,
+                    TagInPost.deleted_at.is_(None)
+                ).all()
             ]
 
             text = [
                 {'text': text.text}
-                for text in TextInPost.query.filter(TextInPost.post_id == post.id, TextInPost.deleted_at.is_(None)).all()
+                for text in TextInPost.query.filter(
+                    TextInPost.post_id == post.id,
+                    TextInPost.deleted_at.is_(None)
+                ).all()
             ]
 
-            posts_list.append({
+            result.append({
                 'id': post.id,
                 'address': post.address,
                 'header': post.header,
@@ -248,10 +340,10 @@ def get_all_posts_service(date_filter_type=None, start_date=None, end_date=None,
                 'lead': post.lead
             })
 
-        return posts_list
+        return result
+
     except Exception as e:
         raise e
-
 
 
 def get_post_by_address_service(post_address):

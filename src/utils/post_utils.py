@@ -10,6 +10,8 @@ from io import BytesIO
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import json
+from datetime import datetime
 
 
 def generate_post_address(header):
@@ -36,51 +38,10 @@ def get_next_filename(folder, extension):
     return f'{next_number}.{extension}'
 
 def enhance_and_resize(img, target_width=1920, target_height=1080):
-    try:
-        h, w = img.shape[:2]
 
-        if w < 920 or h < 480:
-            print("Этап 1: апскейлинг через FSRCNN...")
-            fsrcnn_path = 'src/weights/FSRCNN_x4.pb'
-            if not os.path.exists(fsrcnn_path):
-                print(f"FSRCNN не найдена: {fsrcnn_path}")
-                return cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
+    img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
 
-            sr1 = cv2.dnn_superres.DnnSuperResImpl_create()
-            sr1.readModel(fsrcnn_path)
-            sr1.setModel('fsrcnn', 4)
-            img = sr1.upsample(img)
-
-            print("Этап 2: доработка через EDSR...")
-            img = cv2.resize(img, (int(target_height/4), int(target_width/4)), interpolation=cv2.INTER_LANCZOS4)
-            edsr_path = 'src/weights/EDSR_x4.pb'
-            if not os.path.exists(edsr_path):
-                print(f"EDSR не найдена: {edsr_path}")
-                return cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
-
-            sr2 = cv2.dnn_superres.DnnSuperResImpl_create()
-            sr2.readModel(edsr_path)
-            sr2.setModel('edsr', 4)
-            img = sr2.upsample(img)
-
-            print("Финальный шаг: повышение резкости...")
-            sharpen_kernel = np.array([[0, -1, 0],
-                                       [-1, 5, -1],
-                                       [0, -1, 0]])
-            img = cv2.filter2D(img, -1, sharpen_kernel)
-
-        img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
-
-        return img
-
-    except Exception as e:
-        print(f"Ошибка повышения качества: {e}")
-        return cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
-
-
-    except Exception as e:
-        print(f"Ошибка повышения качества: {e}")
-        return cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
+    return img
 
 
 def save_image(image, post_address, image_type):
@@ -152,6 +113,39 @@ def generate_qr_code(address):
     except Exception as e:
         raise ValueError(f'Ошибка при генерации QR-кода: {e}')
 
+
+def parse_post_dates(post):
+    try:
+        if not post.date_range:
+            return None, None
+
+        date_data = json.loads(post.date_range)
+        start_date_str = str(date_data.get('start_date', '')) if date_data.get('start_date') else ''
+        end_date_str = str(date_data.get('end_date', '')) if date_data.get('end_date') else ''
+
+        post_start = None
+        if start_date_str:
+            if len(start_date_str) == 4 and start_date_str.isdigit():
+                post_start = datetime(int(start_date_str), 1, 1).date()
+            else:
+                try:
+                    post_start = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+
+        post_end = None
+        if end_date_str:
+            if len(end_date_str) == 4 and end_date_str.isdigit():
+                post_end = datetime(int(end_date_str), 12, 31).date()
+            else:
+                try:
+                    post_end = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+
+        return post_start, post_end
+    except:
+        return None, None
 
 def generate_doc_with_qr_bytes(header, address):
     try:
