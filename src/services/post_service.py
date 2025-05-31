@@ -1,13 +1,13 @@
 from datetime import datetime
 import grpc
-from sqlalchemy import and_, extract
+from sqlalchemy import and_, or_, exists
 from flask import jsonify
 import json
 
 from ..db import db
 from ..models import Post, TagInPost, ImageInPost, VideoInPost, TextInPost
 from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format, \
-                        generate_doc_with_qr_bytes, parse_post_dates
+    generate_doc_with_qr_bytes, parse_post_dates
 from ..proto import user_pb2, user_pb2_grpc, tag_pb2, tag_pb2_grpc
 
 user_channel = grpc.insecure_channel('127.0.0.1:50053') # 127.0.0.1 / user-api
@@ -61,6 +61,7 @@ def create_post_service(data, current_user_email):
         left_date = data.get('left_date')
         right_date = data.get('right_date')
         lead = data.get('lead')
+        reviewer = data.get('reviewer')
 
         date_range = json.dumps({
             'start_date': left_date if left_date else None,
@@ -92,7 +93,8 @@ def create_post_service(data, current_user_email):
             creator_id=creator_id,
             structure=json.dumps([]),
             is_approved=is_approved,
-            lead = lead
+            lead = lead,
+            reviewer=reviewer
         )
 
         db.session.add(new_post)
@@ -153,7 +155,6 @@ def edit_post_service(post_address, data, current_user_email):
 
         for key, value in data.items():
             if key not in ['main_image', 'content', 'tags']:
-                print(post,' ', key,' ', value)
                 setattr(post, key, value)
 
         ImageInPost.query.filter(ImageInPost.post_id == post.id, ImageInPost.deleted_at.is_(None)).delete()
@@ -395,7 +396,8 @@ def get_post_by_address_service(post_address):
             'images': images,
             'videos': videos,
             'tags': tags,
-            'lead': post.lead
+            'lead': post.lead,
+            'reviewer': post.reviewer
         }
 
         return post_data
@@ -445,6 +447,137 @@ def get_qr_code_service(post_address):
 
     except Exception as e:
         return {'error': str(e)}, 500
+
+
+def search_posts_service(query, date_filter_type=None, tags_filter=None, start_date=None, end_date=None):
+    try:
+        if not query:
+            return []
+
+        query_filter = and_(
+            Post.is_approved == True,
+            Post.deleted_at.is_(None)
+        )
+
+        if query:
+            search_conditions = []
+            words = query.split()
+
+            for word in words:
+                search_conditions.append(Post.header.ilike(f"%{word}%"))
+                search_conditions.append(Post.lead.ilike(f"%{word}%"))
+                search_conditions.append(Post.reviewer.ilike(f"%{word}%"))
+
+                search_conditions.append(
+                    exists().where(and_(
+                        TextInPost.post_id == Post.id,
+                        TextInPost.deleted_at.is_(None),
+                        TextInPost.text.ilike(f"%{word}%")
+                    ))
+                )
+
+                search_conditions.append(
+                    exists().where(and_(
+                        ImageInPost.post_id == Post.id,
+                        ImageInPost.deleted_at.is_(None),
+                        or_(
+                            ImageInPost.description.ilike(f"%{word}%"),
+                            ImageInPost.address.ilike(f"%{word}%")
+                        )
+                    ))
+                )
+
+            query_filter = and_(
+                query_filter,
+                or_(*search_conditions)
+            )
+
+        if tags_filter:
+            query_filter &= exists().where(and_(
+                TagInPost.post_id == Post.id,
+                TagInPost.deleted_at.is_(None),
+                TagInPost.tag_id.in_(tags_filter)
+            ))
+
+        if start_date or end_date:
+            date_field = Post.created_at if date_filter_type == "creation" else Post.date_range
+            if start_date:
+                query_filter &= (date_field >= start_date)
+            if end_date:
+                query_filter &= (date_field <= end_date)
+
+        posts = Post.query.filter(query_filter).all()
+        return [get_post_by_address_service(post.address) for post in posts]
+
+    except Exception as e:
+        print(f"Ошибка поиска постов: {e}")
+        raise
+
+
+def get_search_suggestions_service(query, limit=5):
+    if not query or len(query) < 2:
+        return []
+
+    try:
+        query_lower = query.lower()
+        suggestions = set()
+
+        header_suggestions = Post.query.filter(
+            Post.header.ilike(f"%{query}%"),
+            Post.is_approved == True,
+            Post.deleted_at.is_(None)
+        ).limit(limit).all()
+
+        for post in header_suggestions:
+            if query_lower in post.header.lower():
+                suggestions.add(post.header)
+
+        lead_suggestions = Post.query.filter(
+            Post.lead.ilike(f"%{query}%"),
+            Post.is_approved == True,
+            Post.deleted_at.is_(None)
+        ).limit(limit).all()
+
+        for post in lead_suggestions:
+            if query_lower in post.lead.lower():
+                suggestions.add(f"{post.lead[:50]}{'...' if len(post.lead) > 50 else ''}")
+
+        reviewer_suggestions = Post.query.filter(
+            Post.reviewer.ilike(f"%{query}%"),
+            Post.is_approved == True,
+            Post.deleted_at.is_(None)
+        ).limit(limit).all()
+
+        for post in reviewer_suggestions:
+            if query_lower in post.reviewer.lower():
+                suggestions.add(post.reviewer)
+
+        text_suggestions = TextInPost.query.filter(
+            TextInPost.text.ilike(f"%{query}%"),
+            TextInPost.deleted_at.is_(None)
+        ).limit(limit).all()
+
+        for text in text_suggestions:
+            if query_lower in text.text.lower():
+                snippet = (text.text[:50] + '...') if len(text.text) > 50 else text.text
+                suggestions.add(snippet)
+
+        sorted_suggestions = sorted(
+            suggestions,
+            key=lambda x: (
+                x.lower().startswith(query_lower),
+                -x.lower().count(query_lower),
+                len(x)
+            ),
+            reverse=True
+        )
+
+        return sorted_suggestions[:limit]
+
+    except Exception as e:
+        print(f"Ошибка при получении подсказок: {e}")
+        return []
+
 
 def _add_content_to_post(post_id, content, post_address, structure):
     for item in content:

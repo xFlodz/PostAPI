@@ -13,7 +13,6 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 import json
 from datetime import datetime
 
-
 def generate_post_address(header):
     address = translit(header, reversed=True).lower().replace(' ', '_')
     return address
@@ -156,7 +155,7 @@ def generate_doc_with_qr_bytes(header, address):
 
         document = Document()
 
-        logo_path = './src/static/logo.png'
+        logo_path = '/src/static/logo.png'
         if os.path.exists(logo_path):
             paragraph = document.add_paragraph()
             run = paragraph.add_run()
@@ -182,3 +181,4 @@ def generate_doc_with_qr_bytes(header, address):
         return doc_bytes
     except Exception as e:
         raise ValueError(f'Ошибка при создании Word-документа: {e}')
+

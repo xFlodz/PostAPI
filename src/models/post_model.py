@@ -15,6 +15,7 @@ class Post(db.Model):
     structure: Mapped[str] = mapped_column(db.String)
     lead: Mapped[str] = mapped_column(db.String(250))
     is_approved: Mapped[bool] = mapped_column(db.Boolean)
+    reviewer: Mapped[str] = mapped_column(db.String)
 
     tags_in_post: Mapped[list['TagInPost']] = relationship(
         'TagInPost', back_populates='post', cascade='all, delete-orphan', overlaps='tags_in_post'

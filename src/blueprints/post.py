@@ -7,7 +7,7 @@ from ..services.post_service import (
     get_all_posts_service,
     get_post_by_address_service,
     approve_post_service,
-    get_qr_code_service
+    get_qr_code_service, search_posts_service, get_search_suggestions_service
 )
 
 post_bp = Blueprint('post', __name__)
@@ -128,5 +128,40 @@ def get_qr_code(post_address):
             as_attachment=True,
             download_name=f"qr_code_{post_address}.docx"
         )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@post_bp.route("/search", methods=['GET', 'POST'])
+def search_posts():
+    try:
+        data = request.get_json()
+        query = data.get('query')
+
+        if not query:
+            return jsonify({'error': 'Параметр "query" обязателен для поиска'}), 400
+
+        results = search_posts_service(
+            query=query,
+            date_filter_type=data.get('dateFilterType'),
+            tags_filter=data.get('tagsFilter', []),
+            start_date=data.get('startDate'),
+            end_date=data.get('endDate')
+        )
+
+        return jsonify(results), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@post_bp.route("/search/suggest", methods=['GET'])
+def get_search_suggestions():
+    try:
+        query = request.args.get('query', '').strip()
+        limit = int(request.args.get('limit', 5))
+
+        suggestions = get_search_suggestions_service(query, limit)
+        return jsonify(suggestions)
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
