@@ -91,7 +91,7 @@ def convert_json_date_to_sqlite_format(json_date, date_key):
 
 def generate_qr_code(address):
 
-    BASE_ADDRESS = 'http://localhost:5173/post'
+    BASE_ADDRESS = 'http://127.0.0.1/post'
 
     try:
         qr = qrcode.QRCode(
@@ -102,13 +102,10 @@ def generate_qr_code(address):
         )
 
         full_address = f'{BASE_ADDRESS}/{address}'
-
         qr.add_data(full_address)
         qr.make(fit=True)
 
-        img = qr.make_image(fill_color="black", back_color="white")
-
-        return img
+        return qr.make_image(fill_color="black", back_color="white")
     except Exception as e:
         raise ValueError(f'Ошибка при генерации QR-кода: {e}')
 

@@ -10,10 +10,10 @@ from ..utils.post_utils import save_image, generate_post_address, convert_json_d
     generate_doc_with_qr_bytes, parse_post_dates
 from ..proto import user_pb2, user_pb2_grpc, tag_pb2, tag_pb2_grpc
 
-user_channel = grpc.insecure_channel('127.0.0.1:50053') # 127.0.0.1 / user-api
+user_channel = grpc.insecure_channel('user-api:50053') # 127.0.0.1 / user-api
 user_stub = user_pb2_grpc.gRPCUserServiceStub(user_channel)
 
-tag_channel = grpc.insecure_channel('127.0.0.1:50054') # 127.0.0.1 / tag-api
+tag_channel = grpc.insecure_channel('tag-api:50054') # 127.0.0.1 / tag-api
 tag_stub = tag_pb2_grpc.gRPCTagServiceStub(tag_channel)
 
 def get_user_by_email(email):
@@ -442,8 +442,8 @@ def get_qr_code_service(post_address):
         if not post:
             return {'error': 'Пост не найден'}, 404
 
-        doc = generate_doc_with_qr_bytes(post.header, post.address)
-        return doc
+        doc_bytes = generate_doc_with_qr_bytes(post.header, post.address)
+        return doc_bytes
 
     except Exception as e:
         return {'error': str(e)}, 500

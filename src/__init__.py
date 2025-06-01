@@ -18,7 +18,7 @@ def create_app():
 
     db.init_app(app)
     migrate.init_app(app, db)
-    CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:5001", "http://localhost:5002", "http://127.0.0.1"]}}, supports_credentials=True)
+    CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:5001", "http://localhost:5002", "http://127.0.0.1:5000", "http://127.0.0.1"]}}, supports_credentials=True, expose_headers=["Content-Disposition"] )
 
 
     from .blueprints import api_bp
