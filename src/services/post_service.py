@@ -7,7 +7,7 @@ import json
 from ..db import db
 from ..models import Post, TagInPost, ImageInPost, VideoInPost, TextInPost
 from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format, \
-    generate_doc_with_qr_bytes, parse_post_dates
+    parse_post_dates
 from ..proto import user_pb2, user_pb2_grpc, tag_pb2, tag_pb2_grpc
 
 user_channel = grpc.insecure_channel('user-api:50053') # 127.0.0.1 / user-api
@@ -435,20 +435,6 @@ def remove_tag_from_all_posts_service(tag_id):
         return 0
 
 
-def get_qr_code_service(post_address):
-    try:
-        post = Post.query.filter(Post.address == post_address, Post.deleted_at.is_(None)).first()
-
-        if not post:
-            return {'error': 'Пост не найден'}, 404
-
-        doc_bytes = generate_doc_with_qr_bytes(post.header, post.address)
-        return doc_bytes
-
-    except Exception as e:
-        return {'error': str(e)}, 500
-
-
 def search_posts_service(query, date_filter_type=None, tags_filter=None, start_date=None, end_date=None):
     try:
         if not query:
@@ -578,6 +564,21 @@ def get_search_suggestions_service(query, limit=5):
         print(f"Ошибка при получении подсказок: {e}")
         return []
 
+def get_user_posts_service(user_id):
+    posts = Post.query.filter_by(creator_id=user_id)
+    posts = posts.filter(Post.is_approved == True)
+
+    result = []
+    for post in posts:
+        result.append({
+            'id': post.id,
+            'address': post.address,
+            'header': post.header,
+            'created_at': post.created_at,
+            'lead': post.lead
+        })
+
+    return result
 
 def _add_content_to_post(post_id, content, post_address, structure):
     for item in content:

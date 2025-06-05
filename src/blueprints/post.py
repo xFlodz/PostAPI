@@ -7,7 +7,8 @@ from ..services.post_service import (
     get_all_posts_service,
     get_post_by_address_service,
     approve_post_service,
-    get_qr_code_service, search_posts_service, get_search_suggestions_service
+    search_posts_service,
+    get_search_suggestions_service, get_user_posts_service
 )
 
 post_bp = Blueprint('post', __name__)
@@ -117,22 +118,6 @@ def approve_post(post_address):
         return jsonify({'error': str(e)}), 500
 
 
-@post_bp.route('/get_qr_code/<string:post_address>', methods=['GET'])
-@jwt_required(refresh=True)
-def get_qr_code(post_address):
-    try:
-        doc_bytes = get_qr_code_service(post_address)
-
-        response = make_response(doc_bytes.getvalue())
-        response.headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-        response.headers.set('Content-Disposition', 'attachment', filename=f"qr_code_{post_address}.docx")
-
-        return response
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
 @post_bp.route("/search", methods=['GET', 'POST'])
 def search_posts():
     try:
@@ -164,5 +149,15 @@ def get_search_suggestions():
         suggestions = get_search_suggestions_service(query, limit)
         return jsonify(suggestions)
 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@post_bp.route("/get_user_posts", methods=['GET'])
+def get_user_posts():
+    try:
+        user_id = request.args.get('userId')
+        posts = get_user_posts_service(user_id)
+        return posts
     except Exception as e:
         return jsonify({'error': str(e)}), 500
