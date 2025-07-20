@@ -5,15 +5,15 @@ from flask import jsonify
 import json
 
 from ..db import db
-from ..models import Post, TagInPost, ImageInPost, VideoInPost, TextInPost
+from ..models import Post, TagInPost, ImageInPost, VideoInPost, TextInPost, UserActions
 from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format, \
     parse_post_dates
 from ..proto import user_pb2, user_pb2_grpc, tag_pb2, tag_pb2_grpc
 
-user_channel = grpc.insecure_channel('user-api:50053') # 127.0.0.1 / user-api
+user_channel = grpc.insecure_channel('127.0.0.1:50053') # 127.0.0.1 / user-api
 user_stub = user_pb2_grpc.gRPCUserServiceStub(user_channel)
 
-tag_channel = grpc.insecure_channel('tag-api:50054') # 127.0.0.1 / tag-api
+tag_channel = grpc.insecure_channel('127.0.0.1:50054') # 127.0.0.1 / tag-api
 tag_stub = tag_pb2_grpc.gRPCTagServiceStub(tag_channel)
 
 def get_user_by_email(email):
@@ -347,7 +347,7 @@ def get_all_posts_service(date_filter_type=None, start_date=None, end_date=None,
         raise e
 
 
-def get_post_by_address_service(post_address):
+def get_post_by_address_service(post_address, finger_print=None):
     try:
         post = Post.query.filter(Post.address == post_address, Post.deleted_at.is_(None)).first()
         if not post:
@@ -380,6 +380,16 @@ def get_post_by_address_service(post_address):
             for tag in TagInPost.query.filter(TagInPost.post_id == post.id, TagInPost.deleted_at.is_(None)).all()
         ]
 
+        is_liked = False
+        if finger_print:
+            action = UserActions.query.filter(UserActions.finger_print == finger_print, UserActions.post_id == post.id).first()
+            if not action:
+                action = _add_view_to_post(finger_print, post.id)
+            is_liked = action.is_liked
+
+        likes = UserActions.query.filter(UserActions.is_liked == True, UserActions.post_id == post.id).count()
+        views = UserActions.query.filter(UserActions.post_id == post.id).count()
+
 
         post_data = {
             'id': post.id,
@@ -397,7 +407,10 @@ def get_post_by_address_service(post_address):
             'videos': videos,
             'tags': tags,
             'lead': post.lead,
-            'reviewer': post.reviewer
+            'reviewer': post.reviewer,
+            'is_liked': is_liked,
+            'likes': likes,
+            'views': views
         }
 
         return post_data
@@ -579,6 +592,24 @@ def get_user_posts_service(user_id):
         })
 
     return result
+
+
+def add_like_to_post_service(post_address, finger_print):
+    post = get_post_by_address_service(post_address)
+    action = UserActions.query.filter(UserActions.finger_print == finger_print, UserActions.post_id == post.get('id')).first()
+    action.is_liked = not action.is_liked
+    db.session.commit()
+
+
+def _add_view_to_post(finger_print, post_id):
+    action = UserActions(finger_print=finger_print,
+                          is_liked=False,
+                          post_id=post_id)
+    db.session.add(action)
+    db.session.commit()
+
+    return action
+
 
 def _add_content_to_post(post_id, content, post_address, structure):
     for item in content:

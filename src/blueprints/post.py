@@ -8,7 +8,9 @@ from ..services.post_service import (
     get_post_by_address_service,
     approve_post_service,
     search_posts_service,
-    get_search_suggestions_service, get_user_posts_service
+    get_search_suggestions_service,
+    get_user_posts_service,
+    add_like_to_post_service
 )
 
 post_bp = Blueprint('post', __name__)
@@ -78,11 +80,22 @@ def get_all_posts():
 
 @post_bp.route('/get_post/<string:post_address>', methods=['GET'])
 def get_post_by_address(post_address):
+    finger_print = request.args.get("fingerprint")
     try:
-        post = get_post_by_address_service(post_address)
+        post = get_post_by_address_service(post_address, finger_print)
         if post:
             return jsonify(post), 200
         return jsonify({'error': 'Пост не найден'}), 404
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@post_bp.route('/add_like_to_post/<string:post_address>', methods=['GET'])
+def add_like_to_post(post_address):
+    finger_print = request.args.get("fingerprint")
+    try:
+        add_like_to_post_service(post_address, finger_print)
+        return jsonify({'message': 'Действие выполнено успешно'}), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -29,6 +29,9 @@ class Post(db.Model):
     texts_in_post: Mapped[list['TextInPost']] = relationship(
         'TextInPost', back_populates='post', cascade='all, delete-orphan', overlaps='texts_in_post'
     )
+    user_actions: Mapped[list['UserActions']] = relationship(
+        'UserActions', back_populates='post', cascade='all, delete-orphan', overlaps='user_actions'
+    )
 
     created_at: Mapped[datetime] = mapped_column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc))
     deleted_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime, nullable=True)
