@@ -1,3 +1,5 @@
+import difflib
+
 import cv2
 import numpy as np
 import os
@@ -5,7 +7,7 @@ import base64
 from flask import current_app
 from sqlalchemy import func
 from transliterate import translit
-import qrcode
+import re
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 import json
@@ -85,6 +87,28 @@ def convert_json_date_to_sqlite_format(json_date, date_key):
         func.substr(func.json_extract(json_date, date_key), 4, 2) + '-' +
         func.substr(func.json_extract(json_date, date_key), 1, 2)
     )
+
+def highlight_match(text, query, max_len=80):
+    text_lower = text.lower()
+    query_lower = query.lower()
+
+    match = difflib.get_close_matches(query_lower, re.findall(r'\w{3,}', text_lower), n=1, cutoff=0.6)
+
+    if not match:
+        return text[:max_len] + '...' if len(text) > max_len else text
+
+    matched_word = match[0]
+    idx = text_lower.find(matched_word)
+    if idx == -1:
+        return text[:max_len] + '...' if len(text) > max_len else text
+
+    end = min(len(text), idx + max_len)
+    snippet = text[idx:end]
+
+    if end < len(text):
+        snippet += '...'
+
+    return snippet
 
 
 def parse_post_dates(post):

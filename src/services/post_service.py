@@ -7,13 +7,13 @@ import json
 from ..db import db
 from ..models import Post, TagInPost, ImageInPost, VideoInPost, TextInPost, UserActions
 from ..utils.post_utils import save_image, generate_post_address, convert_json_date_to_sqlite_format, \
-    parse_post_dates
+    parse_post_dates, highlight_match
 from ..proto import user_pb2, user_pb2_grpc, tag_pb2, tag_pb2_grpc
 
-user_channel = grpc.insecure_channel('user-api:50053') # 127.0.0.1 / user-api
+user_channel = grpc.insecure_channel('127.0.0.1:50053') # 127.0.0.1 / user-api
 user_stub = user_pb2_grpc.gRPCUserServiceStub(user_channel)
 
-tag_channel = grpc.insecure_channel('tag-api:50054') # 127.0.0.1 / tag-api
+tag_channel = grpc.insecure_channel('127.0.0.1:50054') # 127.0.0.1 / tag-api
 tag_stub = tag_pb2_grpc.gRPCTagServiceStub(tag_channel)
 
 def get_user_by_email(email):
@@ -521,45 +521,41 @@ def get_search_suggestions_service(query, limit=5):
         query_lower = query.lower()
         suggestions = set()
 
-        header_suggestions = Post.query.filter(
+        header_posts = Post.query.filter(
             Post.header.ilike(f"%{query}%"),
             Post.is_approved == True,
             Post.deleted_at.is_(None)
-        ).limit(limit).all()
+        ).all()
+        suggestions.update(post.header for post in header_posts)
 
-        for post in header_suggestions:
-            if query_lower in post.header.lower():
-                suggestions.add(post.header)
-
-        lead_suggestions = Post.query.filter(
+        lead_posts = Post.query.filter(
             Post.lead.ilike(f"%{query}%"),
             Post.is_approved == True,
             Post.deleted_at.is_(None)
-        ).limit(limit).all()
+        ).all()
+        suggestions.update(post.header for post in lead_posts)
 
-        for post in lead_suggestions:
-            if query_lower in post.lead.lower():
-                suggestions.add(f"{post.lead[:50]}{'...' if len(post.lead) > 50 else ''}")
-
-        reviewer_suggestions = Post.query.filter(
+        reviewer_posts = Post.query.filter(
             Post.reviewer.ilike(f"%{query}%"),
             Post.is_approved == True,
             Post.deleted_at.is_(None)
-        ).limit(limit).all()
+        ).all()
+        suggestions.update(post.header for post in reviewer_posts)
 
-        for post in reviewer_suggestions:
-            if query_lower in post.reviewer.lower():
-                suggestions.add(post.reviewer)
-
-        text_suggestions = TextInPost.query.filter(
+        matched_texts = TextInPost.query.filter(
             TextInPost.text.ilike(f"%{query}%"),
             TextInPost.deleted_at.is_(None)
-        ).limit(limit).all()
+        ).all()
 
-        for text in text_suggestions:
-            if query_lower in text.text.lower():
-                snippet = (text.text[:50] + '...') if len(text.text) > 50 else text.text
-                suggestions.add(snippet)
+        post_ids = {text.post_id for text in matched_texts}
+
+        if post_ids:
+            text_posts = Post.query.filter(
+                Post.id.in_(post_ids),
+                Post.is_approved == True,
+                Post.deleted_at.is_(None)
+            ).all()
+            suggestions.update(post.header for post in text_posts)
 
         sorted_suggestions = sorted(
             suggestions,
@@ -571,7 +567,7 @@ def get_search_suggestions_service(query, limit=5):
             reverse=True
         )
 
-        return sorted_suggestions[:limit]
+        return list(sorted_suggestions)[:limit]
 
     except Exception as e:
         print(f"Ошибка при получении подсказок: {e}")
@@ -579,7 +575,7 @@ def get_search_suggestions_service(query, limit=5):
 
 def get_user_posts_service(user_id):
     posts = Post.query.filter_by(creator_id=user_id)
-    posts = posts.filter(Post.is_approved == True)
+    posts = posts.filter(Post.is_approved == True, Post.deleted_at.is_(None))
 
     result = []
     for post in posts:
